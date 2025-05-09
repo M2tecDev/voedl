@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-voedl.py – Bulk Video Downloader (v2.3.1)
+voedl.py – Bulk Video Downloader (v2.3.2)
 =======================================
 
 High-speed downloader for VOE / jonathansociallike → diananatureforeign →
