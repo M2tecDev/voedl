@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-voedl.py – VOE.sx Bulk Video Downloader  (v2.5)
+voedl.py – VOE.sx Bulk Video Downloader  (v2.5.1)
 
 Features
 --------
@@ -287,7 +287,9 @@ def main() -> None:
     ap.add_argument("-d", "--debug", action="store_true",
                     help="write debug logfile")
     ap.add_argument("--progress", action="store_true",
-                    help="show tqdm progress bars ( slower )")
+                    help="show tqdm progress bars")
+	ap.add_argument("-o", "--output", default=".",
+                    help="download directory (default: current working dir)")
 
     if len(sys.argv) == 1:
         ap.print_help(sys.stderr)
@@ -304,7 +306,8 @@ def main() -> None:
         logging.getLogger().addHandler(logging.FileHandler(lf, encoding="utf-8"))
         logging.info("Debug log → %s", lf)
 
-    dest = Path(__file__).resolve().parent
+    dest = Path(args.output).expanduser().resolve()
+    dest.mkdir(parents=True, exist_ok=True)        # legt Ordner an, falls nötig
     logging.info("Saving downloads to %s", dest)
 
     tasks: List[Tuple[str, str]]
