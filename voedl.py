@@ -288,7 +288,7 @@ def main() -> None:
                     help="write debug logfile")
     ap.add_argument("--progress", action="store_true",
                     help="show tqdm progress bars")
-	ap.add_argument("-o", "--output", default=".",
+    ap.add_argument("-o", "--output", default=".",
                     help="download directory (default: current working dir)")
 
     if len(sys.argv) == 1:
