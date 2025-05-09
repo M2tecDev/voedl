@@ -1,61 +1,104 @@
-# VOE.sx Bulk Video Downloader — **voedl**
+# VOE.sx Bulk Video Downloader — **voedl**
 
 [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org)
 [![aria2c](https://img.shields.io/badge/aria2c-supported-brightgreen)](https://aria2.github.io)
-[![Latest release](https://img.shields.io/github/v/release/M2tecDev/voedl)](https://github.com/M2tecDev/voedl/releases)
+[![PyPI version](https://img.shields.io/pypi/v/voedl)](https://pypi.org/project/voedl)
 
-> **voedl** (*VOE Downloader*) turns stream pages from **VOE.sx** and its mirrors (jonathansociallike / diananatureforeign) into direct MP4 files—fast & in parallel.
+> **voedl** is a high‑speed, command‑line utility that turns stream pages from **VOE.sx**, **jonathansociallike.com**, and **diananatureforeign.com** into direct MP4 downloads—parallelized and using multi‑connection transfers for maximum throughput.
 
+---
 
-## ✨ Features
-* **Resolver chain** — VOE JSON → `/e/` embed → `/download` stub → orbitcache MP4 (w/ Referer fix).
-* **Multi‑connection** download via `aria2c` (16 × 2 MiB by default).
-* **Parallel files** with a worker pool (`-w/--workers`).
-* **tqdm** multi‑line progress bars (`--progress`).
-* **Debug mode** (`-d`) writes a timestamped log.
+## ✨ Features
+- **Resolver chain**: VOE JSON API → `/e/` embed → `/download` stub → orbitcache MP4 (with correct Referer header to bypass 403).
+- **Multi‑connection download** via [aria2c](https://aria2.github.io/) (default: 16 × 2 MiB per file).
+- **Parallel downloads** with configurable worker pool (`-w` / `--workers`).
+- **Progress bars**: Per‑file live bars via [`tqdm`](https://github.com/tqdm/tqdm) (`--progress`).
+- **Debug mode** (`-d`): Logs detailed resolver and download steps to a timestamped logfile.
+- **Single‑entry mode** (`-l`): Download one URL|Name directly without a list file.
 
-## 🚀 Quick start
+---
+
+## 🚀 Installation
+
+### 1) From PyPI
+
 ```bash
+pip install voedl
+```
+
+Visit the latest release on PyPI: https://pypi.org/project/voedl/
+
+### 2) From source (no pip install required except dependencies)
+
+```bash
+# Clone the repository
 git clone https://github.com/M2tecDev/voedl.git
 cd voedl
-python -m pip install -U yt-dlp requests beautifulsoup4
-sudo apt install aria2     # speed boost   (brew install aria2 on macOS)
-python -m pip install tqdm # pretty bars   (optional)
 
-python bulkdl.py -l "https://voe.sx/v/abc123 | Test Video" --progress
+# Install Python dependencies only
+pip install -r requirements.txt
+
+# Run directly from source
+python voedl.py [options]
 ```
 
-## ⚙️ CLI
+---
+
+## ⚙️ Usage
+
+Once installed via pip:
+
+```bash
+voedl [options]
+```
+
+If running from a local clone:
+
+```bash
+python voedl.py [options]
+```
+
 ```text
-python bulkdl.py [options]
-
--h, --help            print help
--f, --file FILE       links list (default: links.txt)
--w, --workers N       parallel download slots
--c, --chunks  N       aria2c connections per file
--l, --url ENTRY       download one  "url | Name" entry
--d, --debug           write debug logfile
-    --progress        show tqdm bars (requires pkg 'tqdm')
+Options:
+  -h, --help            Show this help message and exit
+  -f, --file FILE       Path to links list file (default: links.txt)
+  -w, --workers N       Number of parallel download slots (default: 2)
+  -c, --chunks N        Number of aria2c connections per file (default: 16)
+  -l, --url ENTRY       Download a single "URL | Name" entry
+  -d, --debug           Enable debug log (writes voedl_YYYYMMDD-HHMMSS.log)
+      --progress        Show tqdm progress bars
 ```
 
-### links.txt example
-```
-https://jonathansociallike.com/9brhleia0cov | The Boss Baby (2017)
-https://voe.sx/v/XYZabc123                    | Movie 2
-```
+---
 
-## 🖥️ Examples
-| Command | Purpose |
-|---------|---------|
-| `python bulkdl.py -f links.txt -w 4 --progress` | Download whole list with 4 workers + bars |
-| `python bulkdl.py -l "https://voe.sx/v/XYZ | Clip"` | Grab single link |
-| `python bulkdl.py -d` | Run default list & save debug log |
+## 🖥️ Examples
 
-## 🤝 Contributing
-Pull requests welcome – please run `black bulkdl.py` before committing.
+- **Download whole list** with 4 parallel workers and live bars:
 
-## 📜 License
-MIT – see [LICENSE](LICENSE).
+  ```bash
+  voedl -f links.txt -w 4 --progress
+  ```
 
-<sub>SEO keywords: voe downloader, voe.sx video download script, orbitcache mp4, jonathansociallike download button.</sub>
+- **Single video** with 32 aria2c segments:
+
+  ```bash
+  voedl -l "https://voe.sx/v/XYZ123 | My Clip" -c 32 --progress
+  ```
+
+- **Default list** with debug log:
+
+  ```bash
+  voedl -d
+  ```
+
+---
+
+## 📜 License
+
+Released under the **MIT License**.  
+See the [LICENSE](LICENSE) file for details.
+
+---
+
+<sub>SEO keywords: voe downloader, voe.sx downloader, jonathansociallike, orbitcache mp4, bulk video CLI.</sub>

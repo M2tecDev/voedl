@@ -1,0 +1,4 @@
+yt-dlp
+requests
+beautifulsoup4
+tqdm
