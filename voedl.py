@@ -1,65 +1,57 @@
 #!/usr/bin/env python3
 """
-voedl.py – Bulk Video Downloader (v2.4)
+voedl.py – VOE.sx Bulk Video Downloader  (v2.5)
 
-* Parallel link list (-w / --workers)
-* Per-file multi-connection download via aria2c (-c / --chunks)
-* VOE / jonathansociallike / diananatureforeign resolver → orbitcache MP4
-* Referer-Fix + HTML-entity decode + 403 workaround
-* Optional tqdm progress bars (--progress)
-* Debug mode writes bulkdl_YYYYMMDD-HHMMSS.log (-d)
-
-© M2tecDev – MIT License
+Features
+--------
+* Parallel file list (-w/--workers)
+* Multi-connection per file via aria2c (-c/--chunks)
+* Resolver chain: VOE → jonathansociallike → diananatureforeign → orbitcache
+* Referer fix, HTML-entity decode, 403 workaround
+* tqdm multi-line progress bars (--progress) — stdout stays *clean*
+* Debug mode (-d) writes bulkdl_YYYYMMDD-HHMMSS.log
 """
+
 from __future__ import annotations
 
-import argparse
-import datetime as _dt
-import html
-import logging
-import re
-import shutil
-import sys
-import time
+import argparse, datetime as dt, html, logging, re, shutil, sys, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup  # type: ignore
-from yt_dlp import YoutubeDL  # type: ignore
+from bs4 import BeautifulSoup           # type: ignore
+from yt_dlp import YoutubeDL            # type: ignore
 
 try:
-    from tqdm import tqdm  # type: ignore
+    from tqdm import tqdm               # type: ignore
     _TQDM = True
 except ImportError:
     _TQDM = False
 
-# ──────────────────────────── Config ─────────────────────────────
+# ─────────────────────────── settings ────────────────────────────
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124 Safari/537.36",
     "Accept": "text/html,application/json",
 }
-TIMEOUT = 15
+TIMEOUT         = 15
 ARIA_CHUNK_SIZE = "2M"
 
-PAT_ORBIT = re.compile(r"https?://[^\"']+orbitcache\.com/[^\"']+\.mp4[^\"']*")
+PAT_ORBIT  = re.compile(r"https?://[^\"']+orbitcache\.com/[^\"']+\.mp4[^\"']*")
 _VOE_ID_RE = re.compile(r"https?://voe\.sx/(?:[evd]/)?([A-Za-z0-9]+)")
 
-# ───────────────────────── Helper ────────────────────────────────
+# ───────────────────── general helpers ───────────────────────────
 def sanitize(name: str) -> str:
     return re.sub(r'[\\/:*?"<>|]+', "_", name).strip()
 
 
 def _req(method: str, url: str, *, referer: str | None = None, **kw):
-    headers = dict(HEADERS)
+    hdr = dict(HEADERS)
     if referer:
-        headers["Referer"] = referer
-    kw.setdefault("headers", headers)
+        hdr["Referer"] = referer
+    kw.setdefault("headers", hdr)
     kw.setdefault("timeout", TIMEOUT)
     return requests.request(method, url, **kw)
 
@@ -69,15 +61,14 @@ def _follow_redirect(url: str) -> Optional[str]:
         r = _req("HEAD", url, allow_redirects=True)
         if r.status_code >= 400:
             r = _req("GET", url, allow_redirects=True, stream=True)
-        final = r.url
-        if re.search(r"\.(mp4|mkv|webm|mov)(\?|$)", final):
-            return final
+        if re.search(r"\.(mp4|mkv|webm|mov)(\?|$)", r.url):
+            return r.url
     except Exception as exc:
-        logging.debug("redirect fail %s: %s", url, exc)
+        logging.debug("redirect fail %s → %s", url, exc)
     return None
 
-# ─────────────────────── Resolver chain ─────────────────────────
-def _extract_orbitcache(html_text: str) -> Optional[str]:
+# ───────────────────────── resolver ──────────────────────────────
+def _extract_orbit(html_text: str) -> Optional[str]:
     m = PAT_ORBIT.search(html_text)
     return html.unescape(m.group(0)) if m else None
 
@@ -86,11 +77,11 @@ def _resolve_download_page(url: str) -> Optional[str]:
     vid = urlparse(url).path.strip("/").split("/")[0]
     ref = f"https://jonathansociallike.com/{vid}/download"
     try:
-        html_text = _req("GET", url, referer=ref).text
+        page = _req("GET", url, referer=ref).text
     except Exception as exc:
-        logging.debug("download page fetch fail %s", exc)
+        logging.debug("download-page fetch fail %s", exc)
         return None
-    return _extract_orbitcache(html_text) or _follow_redirect(url)
+    return _extract_orbit(page) or _follow_redirect(url)
 
 
 def _voe_id(url: str) -> Optional[str]:
@@ -113,8 +104,8 @@ def _voe_api_mp4(vid: str) -> Optional[str]:
                 cand = cand.get("url") or cand.get("src")
             if isinstance(cand, str):
                 return cand
-        for key in ("url", "src", "link"):
-            cand = data.get(key)
+        for k in ("url", "src", "link"):
+            cand = data.get(k)
             if isinstance(cand, str):
                 return cand
     return None
@@ -149,42 +140,42 @@ def resolve_url(url: str) -> str:
     url = url.strip()
     if re.search(r"\.(mp4|mkv|webm|mov)(\?|$)", url):
         return url
-    redir = _follow_redirect(url)
-    if redir:
+    if redir := _follow_redirect(url):
         return redir
     if "voe.sx" in url:
         return _resolve_voe(url)
+
+    # direct jonathansociallike stub
     m = re.match(r"https?://jonathansociallike\.com/([A-Za-z0-9]+)", url)
     if m:
         vid = m.group(1)
-        direct = _resolve_download_page(f"https://diananatureforeign.com/{vid}/download")
+        direct = _resolve_download_page(
+            f"https://diananatureforeign.com/{vid}/download")
         if direct:
             return direct
 
     try:
         html_text = _req("GET", url).text
     except Exception as exc:
-        logging.debug("generic fetch fail %s: %s", url, exc)
+        logging.debug("fetch fail %s: %s", url, exc)
         return url
 
     soup = BeautifulSoup(html_text, "html.parser")
-
     btn = soup.find("a", href=re.compile(r"/download"))
     if btn and btn.has_attr("href"):
         stub = btn["href"]
         if not stub.startswith("http"):
             stub = urljoin(url, stub)
-        mp4 = _resolve_download_page(stub)
-        if mp4:
+        if mp4 := _resolve_download_page(stub):
             return mp4
 
     iframe = soup.find("iframe", src=re.compile(r"voe\\.sx/(?:[evd]/)?"))
     if iframe and iframe.has_attr("src"):
         return _resolve_voe(iframe["src"])
 
-    return _extract_orbitcache(html_text) or url
+    return _extract_orbit(html_text) or url
 
-# ─────────────────── Download helpers ───────────────────────────
+# ───────────────────── download helpers ─────────────────────────
 def _headers_for(mp4_url: str) -> dict[str, str]:
     if "orbitcache.com" in mp4_url:
         vid = urlparse(mp4_url).path.split("/")[4].split("_")[0]
@@ -196,33 +187,21 @@ def _aria2_available() -> bool:
     return shutil.which("aria2c") is not None
 
 
-def _tqdm_bar(title: str):
-    if not _TQDM:
-        return None
-    return tqdm(desc=title[:50], unit="B", unit_scale=True, leave=True)
+def _bar(title: str):
+    if _TQDM:
+        return tqdm(desc=title[:50], unit="B", unit_scale=True, leave=True)
+    return None
 
 
-def _progress_factory(bar):
+def _hook_for(bar):
     def hook(d):
         if bar is None:
-            # fallback: print one-liner
-            if d.get("status") == "downloading":
-                speed = d.get("speed") or 0.0
-                eta = d.get("eta") or 0
-                title = d.get("filename", "download")
-                print(
-                    f"\r{title[:40]:40} {speed/1_048_576:6.2f} MB/s "
-                    f"ETA: {time.strftime('%M:%S', time.gmtime(int(eta)))}   ",
-                    end="", flush=True
-                )
-            elif d.get("status") == "finished":
-                print()
-        else:
-            if d.get("status") == "downloading":
-                bar.total = d.get("total_bytes") or bar.total
-                bar.update(d.get("downloaded_bytes") - bar.n)
-            elif d.get("status") == "finished":
-                bar.close()
+            return
+        if d.get("status") == "downloading":
+            bar.total = d.get("total_bytes") or bar.total
+            bar.update(d.get("downloaded_bytes") - bar.n)
+        elif d.get("status") == "finished":
+            bar.close()
     return hook
 
 
@@ -234,23 +213,24 @@ def _download(task: Tuple[str, str], args, dest: Path):
         logging.exception("resolver failed for %s", url)
         return
 
-    bar = _tqdm_bar(title) if args.progress else None
+    bar = _bar(title) if args.progress else None
 
-    class _QuietLogger:          
-        def debug(self, msg): pass
+    class _Silent:                       # suppress yt-dlp chatter
+        def debug(self, *_): ...
         info = warning = error = debug
 
     opts = {
         "outtmpl": str(dest / f"{sanitize(title)}.%(ext)s"),
-        "quiet": True,                   
-        "logger": _QuietLogger(),        
+        "quiet": True,
+        "logger": _Silent() if args.progress and not args.debug else None,
         "no_warnings": True,
         "retries": 3,
-        "progress_hooks": [_progress_factory(bar)],
+        "progress_hooks": [_hook_for(bar)],
         "http_headers": _headers_for(final),
-}
+    }
 
-    if _aria2_available():
+    # use aria2c only when *no* progress bars requested
+    if _aria2_available() and not args.progress:
         opts.update({
             "external_downloader": "aria2c",
             "external_downloader_args": [
@@ -262,18 +242,19 @@ def _download(task: Tuple[str, str], args, dest: Path):
             ],
         })
 
-    logging.info("Final URL → %s", final)
+    if not args.progress or args.debug:
+        logging.info("Final URL → %s", final)
     with YoutubeDL(opts) as ydl:
         ydl.download([final])
     if bar:
         bar.close()
 
-# ───────────────────────── CLI helpers ──────────────────────────
+# ───────────────────────── cli helpers ──────────────────────────
 def _parse_line(line: str) -> Optional[Tuple[str, str]]:
     if "|" not in line:
         return None
-    url, name = (p.strip() for p in line.split("|", 1))
-    return (url, name) if url and name else None
+    u, n = (x.strip() for x in line.split("|", 1))
+    return (u, n) if u and n else None
 
 
 def _load_list(path: Path) -> List[Tuple[str, str]]:
@@ -282,74 +263,69 @@ def _load_list(path: Path) -> List[Tuple[str, str]]:
         raw = raw.strip()
         if not raw or raw.startswith("#"):
             continue
-        item = _parse_line(raw)
-        if item:
-            tasks.append(item)
+        if parsed := _parse_line(raw):
+            tasks.append(parsed)
         else:
-            logging.warning("Skipping malformed line: %s", raw)
+            logging.warning("Skip malformed line: %s", raw)
     return tasks
 
-# ─────────────────────────── main() ─────────────────────────────
+# ──────────────────────────── main ──────────────────────────────
 def main() -> None:
-    parser = argparse.ArgumentParser(
+    ap = argparse.ArgumentParser(
         prog="voedl",
-        description="VOE.sx bulk video downloader",
+        description="High-speed bulk video downloader for VOE.sx",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("-f", "--file", default="links.txt",
-                        help="links list file (url | name)")
-    parser.add_argument("-w", "--workers", type=int, default=2,
-                        help="parallel download slots")
-    parser.add_argument("-c", "--chunks", type=int, default=16,
-                        help="aria2c connections per file")
-    parser.add_argument("-l", "--url", metavar="URL|NAME",
-                        help='single entry in format "url | Name"')
-    parser.add_argument("-d", "--debug", action="store_true",
-                        help="enable debug log file")
-    parser.add_argument("--progress", action="store_true",
-                        help="show tqdm progress bars (pip install tqdm)")
+    ap.add_argument("-f", "--file", default="links.txt",
+                    help="links list file (url | name)")
+    ap.add_argument("-w", "--workers", type=int, default=2,
+                    help="parallel download slots")
+    ap.add_argument("-c", "--chunks", type=int, default=16,
+                    help="aria2c connections per file")
+    ap.add_argument("-l", "--url", metavar="URL|NAME",
+                    help="single entry \"url | Name\"")
+    ap.add_argument("-d", "--debug", action="store_true",
+                    help="write debug logfile")
+    ap.add_argument("--progress", action="store_true",
+                    help="show tqdm progress bars ( slower )")
 
     if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
+        ap.print_help(sys.stderr)
         sys.exit(0)
 
-    args = parser.parse_args()
-
-    # logging / debug
+    args = ap.parse_args()
     lvl = logging.DEBUG if args.debug else logging.INFO
-    logging.basicConfig(
-        level=lvl,
-        format="%(asctime)s | %(levelname)5s | %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    logging.basicConfig(level=lvl,
+                        format="%(asctime)s | %(levelname)5s | %(message)s",
+                        datefmt="%H:%M:%S")
     if args.debug:
-        logf = Path(__file__).with_name(
-            f"bulkdl_{_dt.datetime.now():%Y%m%d-%H%M%S}.log")
-        logging.getLogger().addHandler(logging.FileHandler(logf, encoding="utf-8"))
-        logging.info("Debug log → %s", logf)
+        lf = Path(__file__).with_name(
+            f"bulkdl_{dt.datetime.now():%Y%m%d-%H%M%S}.log")
+        logging.getLogger().addHandler(logging.FileHandler(lf, encoding="utf-8"))
+        logging.info("Debug log → %s", lf)
 
     dest = Path(__file__).resolve().parent
     logging.info("Saving downloads to %s", dest)
 
-    # task list
+    tasks: List[Tuple[str, str]]
     if args.url:
-        one = _parse_line(args.url)
-        if not one:
-            parser.error("-l/--url must be in format  URL | Name")
-        tasks = [one]
+        single = _parse_line(args.url)
+        if not single:
+            ap.error("-l entry must be  URL | Name")
+        tasks = [single]
     else:
         src = Path(args.file)
         if not src.exists():
-            parser.error(f"links file '{src}' not found")
+            ap.error(f"links file '{src}' not found")
         tasks = _load_list(src)
         if not tasks:
-            logging.warning("Nothing to do – list empty.")
+            logging.warning("List empty – nothing to do.")
             return
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futs = [pool.submit(_download, t, args, dest) for t in tasks]
-        for fut in as_completed(futs):
-            fut.result()  # propagate
+        futures = [pool.submit(_download, t, args, dest) for t in tasks]
+        for f in as_completed(futures):
+            f.result()
 
     print("\nAll tasks completed.")
 

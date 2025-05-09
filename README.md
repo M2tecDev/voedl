@@ -67,7 +67,7 @@ Options:
   -c, --chunks N        Number of aria2c connections per file (default: 16)
   -l, --url ENTRY       Download a single "URL | Name" entry
   -d, --debug           Enable debug log (writes voedl_YYYYMMDD-HHMMSS.log)
-      --progress        Show tqdm progress bars
+      --progress        Show tqdm progress bars ( slower )
 ```
 
 ---
